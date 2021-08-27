@@ -1,0 +1,160 @@
+---
+title: "560 - Project 2"
+author: "Anderson"
+date: "8/26/2021"
+output:
+  html_document:
+    df_print: paged
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(gbm)
+library(caret)
+library(MASS)
+library(ISLR)
+calc_rmse = function(actual, predicted) {
+  sqrt(mean((actual - predicted) ^ 2))
+}
+```
+
+
+# Data
+```{r}
+# Import data and use only the first 1,000 row.  Full frame takes too long to process
+setwd("E:/OneDrive - UW/TBANLT 560/Project Two")
+housing.df <- read.csv (file = 'df_housing.csv')
+selected.var <- c(2, 3, 4, 5, 6)
+housing.df <- housing.df[1:4600, selected.var]
+
+# Parse data to training and testing set with selected columns
+train.index <- sample(c(1:dim(housing.df)[1]), dim(housing.df)[1]*0.6)   
+housing_trn <- housing.df[train.index, ]
+housing_tst <- housing.df[-train.index, ]
+head(housing_trn)
+```
+
+# Tree Model
+```{r}
+housing_tree = rpart(price ~ ., data = housing.df)
+
+housing_tree_tst_pred = predict(housing_tree, newdata = housing_tst)
+plot(housing_tree_tst_pred, housing_tst$price, 
+     xlab = "Predicted", ylab = "Actual", 
+     main = "Predicted vs Actual: Single Tree, Test Data",
+     col = "dodgerblue", pch = 20)
+grid()
+abline(0, 1, col = "darkorange", lwd = 2)
+
+tree_tst_rmse = calc_rmse(housing_tree_tst_pred, housing_tst$price)
+tree_tst_rmse
+```
+
+# Linear model
+```{r}
+housing_lm = lm(price ~ ., data = housing_trn)
+
+housing_lm_tst_pred = predict(housing_lm, newdata = housing_tst)
+plot(housing_lm_tst_pred, housing_tst$price,
+     xlab = "Predicted", ylab = "Actual",
+     main = "Predicted vs Actual: Linear Model, Test Data",
+     col = "dodgerblue", pch = 20)
+grid()
+abline(0, 1, col = "darkorange", lwd = 2)
+
+lm_tst_rmse = calc_rmse(housing_lm_tst_pred, housing_tst$price)
+```
+
+# Bagging
+```{r}
+housing_bag = randomForest(price ~ ., data = housing_trn, mtry = 13, 
+                          importance = TRUE, ntrees = 500)
+housing_bag
+
+
+housing_bag_tst_pred = predict(housing_bag, newdata = housing_tst)
+plot(housing_bag_tst_pred,housing_tst$price,
+     xlab = "Predicted", ylab = "Actual",
+     main = "Predicted vs Actual: Bagged Model, Test Data",
+     col = "dodgerblue", pch = 20)
+grid()
+abline(0, 1, col = "darkorange", lwd = 2)
+
+bag_tst_rmse = calc_rmse(housing_bag_tst_pred, housing_tst$price)
+bag_tst_rmse
+
+plot(housing_bag, col = "dodgerblue", lwd = 2, main = "Bagged Trees: Error vs Number of Trees")
+grid()
+```
+
+# Random forest
+```{r}
+housing_forest = randomForest(price ~ ., data = housing_trn, mtry = 4, 
+                             importance = TRUE, ntrees = 500)
+housing_forest
+
+
+importance(housing_forest, type = 1)
+
+housing_forest_tst_pred = predict(housing_forest, newdata = housing_tst)
+plot(housing_forest_tst_pred, housing_tst$price,
+     xlab = "Predicted", ylab = "Actual",
+     main = "Predicted vs Actual: Random Forest, Test Data",
+     col = "dodgerblue", pch = 20)
+grid()
+abline(0, 1, col = "darkorange", lwd = 2)
+
+forest_tst_rmse = calc_rmse(housing_forest_tst_pred, housing_tst$price)
+forest_tst_rmse
+
+housing_forest_trn_pred = predict(housing_forest, newdata = housing_trn)
+forest_trn_rmse = calc_rmse(housing_forest_trn_pred, housing_trn$price)
+forest_oob_rmse = calc_rmse(housing_forest$predicted, housing_trn$price)
+```
+
+# Boosting
+```{r}
+housing_boost = gbm(price ~ ., data = housing_trn, distribution = "gaussian", 
+                    n.trees = 5000, interaction.depth = 4, shrinkage = 0.01)
+housing_boost
+
+
+tibble::as_tibble(summary(housing_boost))
+
+par(mfrow = c(1, 3))
+plot(housing_boost, i = "bedrooms", col = "dodgerblue", lwd = 2)
+
+plot(housing_boost, i = "bathrooms", col = "dodgerblue", lwd = 2)
+
+plot(housing_boost, i = "sqft_living", col = "dodgerblue", lwd = 2)
+
+plot(housing_boost, i = "sqft_lot", col = "dodgerblue", lwd = 2)
+
+housing_boost_tst_pred = predict(housing_boost, newdata = housing_tst, n.trees = 5000)
+boost_tst_rmse = calc_rmse(housing_boost_tst_pred, housing_tst$price)
+boost_tst_rmse
+
+plot(housing_boost_tst_pred, housing_tst$price,
+     xlab = "Predicted", ylab = "Actual", 
+     main = "Predicted vs Actual: Boosted Model, Test Data",
+     col = "dodgerblue", pch = 20)
+grid()
+abline(0, 1, col = "darkorange", lwd = 2)
+```
+
+# Results
+```{r}
+housing_rmse = data.frame(
+  Model = c("Single Tree", "Linear Model", "Bagging",  "Random Forest",  "Boosting"),
+  TestError = c(tree_tst_rmse, lm_tst_rmse, bag_tst_rmse, forest_tst_rmse, boost_tst_rmse)
+  )
+housing_rmse
+```
+
+
+
